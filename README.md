@@ -31,9 +31,33 @@ Dragging near the edge of the window scrolls automatically, so a crop or redacti
 
 Redaction boxes stay movable while you edit and are painted into the pixels when you download or copy, so nothing underneath is recoverable from the saved image.
 
+## Evidence mode
+
+For screenshots that may be used as evidence, right-click the toolbar icon and tick **Evidence mode**. The icon shows an orange **EV** badge while it's on. Captures taken in evidence mode:
+
+- Hide nothing on the page, so the image matches exactly what was on screen (fixed headers may repeat).
+- Fingerprint every raw screen image with SHA-256 the moment it's captured.
+- Record the URL, page title, capture start and end times (UTC and local), browser version and window size.
+- Stamp downloads and copies with a footer showing the URL, capture time, the original image's SHA-256 and a summary of edits, and embed the same details in the PNG metadata.
+
+In the editor, **Evidence package** downloads a zip containing:
+
+| File | What it is |
+| --- | --- |
+| `original.png` | The full stitched capture, unedited |
+| `redacted.png` | The cropped and redacted copy, with the provenance footer |
+| `frames/` | Every raw screen image exactly as captured |
+| `report.pdf` | Capture details, method, edits, fingerprints and how to verify, followed by the redacted image |
+| `manifest.json` | All of the above in machine-readable form, including crop and redaction coordinates and a timestamped edit log |
+| `SHA256SUMS.txt` | Fingerprints of every file; check with `shasum -a 256 -c SHA256SUMS.txt` |
+
+The package includes the unredacted original. Share only `redacted.png` or `report.pdf` with anyone who shouldn't see everything.
+
+Evidence mode documents how a capture was made; it doesn't make a screenshot admissible on its own. Requirements vary by jurisdiction, so check with whoever is handling the matter.
+
 ## How it works
 
-- Fixed elements (headers, cookie bars, chat bubbles) appear once at the top instead of repeating in every frame; sticky headers are hidden only while stuck.
+- Fixed elements (headers, cookie bars, chat bubbles) appear once at the top instead of repeating in every frame; sticky headers are hidden only while stuck. Evidence mode turns this off.
 - Web-app layouts where the window itself doesn't scroll (an inner feed or panel does) are detected, and that panel is scrolled and stitched instead.
 - Endless-scroll pages stop after 80 screens.
 - Very tall pages are scaled down to stay within Chrome's 32,000 px canvas limit; the editor notes when that happens.

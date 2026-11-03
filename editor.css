@@ -125,13 +125,17 @@ kbd {
 }
 #message[hidden] { display: none; }
 
-/* ---------- selection ---------- */
+/* ---------- boxes: redactions and selections ---------- */
 
-#sel {
-  position: absolute;
-  pointer-events: none;
-}
+#rects { position: absolute; inset: 0; pointer-events: none; }
+
+.box { position: absolute; pointer-events: none; }
 #sel[hidden] { display: none; }
+
+.redaction { background: #000; }
+.redaction.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+#rects.inactive .redaction.selected { outline: none; }
+#rects.inactive .redaction i { display: none; }
 
 #sel.redact {
   background: rgba(0, 0, 0, 0.82);
@@ -144,7 +148,7 @@ kbd {
   box-shadow: 0 0 0 100000px rgba(0, 0, 0, 0.55);
 }
 
-#sel i {
+.box i {
   position: absolute;
   width: 10px;
   height: 10px;
@@ -152,14 +156,15 @@ kbd {
   border: 1px solid #000;
   border-radius: 2px;
 }
-#sel i[data-h="nw"] { left: -5px; top: -5px; }
-#sel i[data-h="n"]  { left: calc(50% - 5px); top: -5px; }
-#sel i[data-h="ne"] { right: -5px; top: -5px; }
-#sel i[data-h="e"]  { right: -5px; top: calc(50% - 5px); }
-#sel i[data-h="se"] { right: -5px; bottom: -5px; }
-#sel i[data-h="s"]  { left: calc(50% - 5px); bottom: -5px; }
-#sel i[data-h="sw"] { left: -5px; bottom: -5px; }
-#sel i[data-h="w"]  { left: -5px; top: calc(50% - 5px); }
+.redaction i { background: #fff; border-color: var(--accent); }
+.box i[data-h="nw"] { left: -5px; top: -5px; }
+.box i[data-h="n"]  { left: calc(50% - 5px); top: -5px; }
+.box i[data-h="ne"] { right: -5px; top: -5px; }
+.box i[data-h="e"]  { right: -5px; top: calc(50% - 5px); }
+.box i[data-h="se"] { right: -5px; bottom: -5px; }
+.box i[data-h="s"]  { left: calc(50% - 5px); bottom: -5px; }
+.box i[data-h="sw"] { left: -5px; bottom: -5px; }
+.box i[data-h="w"]  { left: -5px; top: calc(50% - 5px); }
 
 #selSize {
   position: absolute;
@@ -173,6 +178,55 @@ kbd {
   white-space: nowrap;
 }
 #sel.flip #selSize { top: 6px; left: 6px; }
+
+/* ---------- discard dialog ---------- */
+
+button.danger { background: #dc2626; }
+button.danger:hover:not(:disabled) { background: #b91c1c; }
+
+dialog {
+  background: var(--bar);
+  color: var(--text);
+  border: 1px solid var(--bar-line);
+  border-radius: 12px;
+  padding: 22px 24px 18px;
+  width: min(420px, calc(100vw - 32px));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+dialog p { margin: 0 0 20px; color: var(--muted); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+dialog label { display: block; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+dialog input, dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--bar-line);
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+dialog textarea { resize: vertical; }
+dialog input:focus, dialog textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+dialog p.warn { color: #f2b84b; font-size: 12px; }
+dialog code { font-size: 11.5px; }
+#packageDialog { width: min(480px, calc(100vw - 32px)); }
+
+.pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1c1917;
+  background: #f59e0b;
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.pill[hidden] { display: none; }
 
 /* ---------- status bar ---------- */
 

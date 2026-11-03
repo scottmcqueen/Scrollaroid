@@ -31,6 +31,7 @@ async function withStore(mode, fn) {
 }
 
 export const saveCapture = (id, data) => withStore('readwrite', (s) => s.put(data, id));
+export const deleteCapture = (id) => withStore('readwrite', (s) => s.delete(id));
 export const loadCapture = (id) => withStore('readonly', (s) => s.get(id));
 
 // Captures are keyed by their creation timestamp; drop anything older than maxAgeMs.

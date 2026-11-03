@@ -8,9 +8,65 @@ const SETTLE_MS = 250;
 const MAX_FRAMES = 80;
 const KEEP_CAPTURES_MS = 24 * 60 * 60 * 1000;
 
+const DEFAULT_TITLE = 'Capture full page (Alt+Shift+S)';
+const EVIDENCE_TITLE = 'Capture full page — Evidence mode on (Alt+Shift+S)';
+
 let busy = false;
 
 chrome.action.onClicked.addListener((tab) => captureTab(tab));
+
+/* ---------------------------- evidence mode ---------------------------- */
+
+async function evidenceEnabled() {
+  const { evidenceMode = false } = await chrome.storage.local.get('evidenceMode');
+  return evidenceMode;
+}
+
+async function setupMenu() {
+  const on = await evidenceEnabled();
+  await chrome.contextMenus.removeAll();
+  chrome.contextMenus.create({
+    id: 'evidence-mode',
+    type: 'checkbox',
+    title: 'Evidence mode',
+    checked: on,
+    contexts: ['action'],
+  });
+  showEvidenceState(on);
+}
+
+function showEvidenceState(on) {
+  chrome.action.setBadgeText({ text: on ? 'EV' : '' });
+  chrome.action.setBadgeBackgroundColor({ color: '#b45309' });
+  chrome.action.setTitle({ title: on ? EVIDENCE_TITLE : DEFAULT_TITLE });
+}
+
+chrome.runtime.onInstalled.addListener(setupMenu);
+chrome.runtime.onStartup.addListener(setupMenu);
+chrome.contextMenus.onClicked.addListener((info) => {
+  if (info.menuItemId === 'evidence-mode') chrome.storage.local.set({ evidenceMode: info.checked });
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !('evidenceMode' in changes)) return;
+  const on = !!changes.evidenceMode.newValue;
+  showEvidenceState(on);
+  chrome.contextMenus.update('evidence-mode', { checked: on }).catch(() => {});
+});
+
+async function sha256Hex(buf) {
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function browserVersion() {
+  try {
+    const ua = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'platformVersion']);
+    const chrome = ua.fullVersionList.find((b) => /Chrome|Chromium/.test(b.brand));
+    return `${chrome ? `${chrome.brand} ${chrome.version}` : 'Chromium'} on ${ua.platform} ${ua.platformVersion || ''}`.trim();
+  } catch {
+    return navigator.userAgent;
+  }
+}
 
 async function captureTab(tab) {
   if (busy || !tab?.id) return;
@@ -22,7 +78,9 @@ async function captureTab(tab) {
     await setBadge(tabId, '…', '#4b5563');
     pruneCaptures(KEEP_CAPTURES_MS).catch(() => {});
 
-    const info = await run(tabId, preparePage);
+    const evidence = await evidenceEnabled();
+    const startedAt = new Date().toISOString();
+    const info = await run(tabId, preparePage, [evidence]);
     prepared = true;
 
     const frames = [];
@@ -35,7 +93,8 @@ async function captureTab(tab) {
         truncated = true;
         break;
       }
-      const step = await run(tabId, scrollStep, [target, frames.length > 0]);
+      // In evidence mode nothing on the page is hidden, so the image shows exactly what was on screen.
+      const step = await run(tabId, scrollStep, [target, !evidence && frames.length > 0]);
       // The page stopped moving: we've reached the bottom.
       if (frames.length && step.y <= frames[frames.length - 1].y + 0.5) break;
 
@@ -43,7 +102,14 @@ async function captureTab(tab) {
       await sleep(wait);
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
       lastCapture = Date.now();
-      frames.push({ y: step.y, blob: await (await fetch(dataUrl)).blob() });
+      const blob = await (await fetch(dataUrl)).blob();
+      const frame = { y: step.y, blob };
+      if (evidence) {
+        // Fingerprint each raw screen image the moment it's captured, before any processing.
+        frame.capturedAt = new Date(lastCapture).toISOString();
+        frame.sha256 = await sha256Hex(await blob.arrayBuffer());
+      }
+      frames.push(frame);
 
       const maxY = Math.max(0, step.contentH - info.bandH);
       const pct = Math.min(99, Math.round((100 * (step.y + info.bandH)) / Math.max(1, step.contentH)));
@@ -67,6 +133,17 @@ async function captureTab(tab) {
         url: tab.url || '',
         truncated,
         createdAt: Date.now(),
+        evidence,
+        ...(evidence && {
+          startedAt,
+          completedAt: new Date().toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          pageUrl: info.url,
+          dpr: info.dpr,
+          userAgent: navigator.userAgent,
+          browser: await browserVersion(),
+          toolVersion: chrome.runtime.getManifest().version,
+        }),
       },
       frames,
     });
@@ -76,15 +153,15 @@ async function captureTab(tab) {
       index: tab.index + 1,
       openerTabId: tabId,
     });
-    await setBadge(tabId, '', '#000');
+    await clearBadge(tabId);
   } catch (err) {
     console.error('Scrollaroid:', err);
     if (prepared) await run(tabId, restorePage).catch(() => {});
     await setBadge(tabId, 'ERR', '#dc2626');
     await chrome.action.setTitle({ tabId, title: `Couldn't capture this page: ${err.message || err}` }).catch(() => {});
-    setTimeout(() => {
-      setBadge(tabId, '', '#000');
-      chrome.action.setTitle({ tabId, title: 'Capture full page (Alt+Shift+S)' }).catch(() => {});
+    setTimeout(async () => {
+      await clearBadge(tabId);
+      chrome.action.setTitle({ tabId, title: (await evidenceEnabled()) ? EVIDENCE_TITLE : DEFAULT_TITLE }).catch(() => {});
     }, 5000);
   } finally {
     busy = false;
@@ -103,6 +180,13 @@ function setBadge(tabId, text, color) {
   ]).catch(() => {});
 }
 
+// Drop this tab's progress badge so the global one (EV in evidence mode) shows again.
+async function clearBadge(tabId) {
+  await chrome.action.setBadgeText({ tabId, text: null }).catch(() => chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {}));
+  const on = await evidenceEnabled();
+  chrome.action.setBadgeBackgroundColor({ tabId, color: on ? '#b45309' : '#4b5563' }).catch(() => {});
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ------------------------------------------------------------------ */
@@ -110,7 +194,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* self-contained (no references to anything outside their own body).  */
 /* ------------------------------------------------------------------ */
 
-function preparePage() {
+function preparePage(evidence) {
   const de = document.documentElement;
   const st = (window.__fpsState = { candidates: [] });
 
@@ -161,7 +245,7 @@ function preparePage() {
   // Fixed and sticky elements would repeat in every frame; remember them so they
   // can be hidden after the first one.
   const scope = container || document.body;
-  if (scope) {
+  if (scope && !evidence) {
     for (const el of scope.querySelectorAll('*')) {
       const p = getComputedStyle(el).position;
       if (p === 'fixed' || p === 'sticky') st.candidates.push({ el, p });
@@ -174,6 +258,8 @@ function preparePage() {
     bandTop,
     bandH,
     mode: container ? 'element' : 'window',
+    url: location.href,
+    dpr: window.devicePixelRatio,
   };
 }
 

@@ -1,9 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Scrollaroid",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Snap a whole scrolling page in one go, then crop it and black out anything private.",
-  "permissions": ["activeTab", "scripting", "unlimitedStorage", "clipboardWrite"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "unlimitedStorage",
+    "clipboardWrite",
+    "contextMenus",
+    "storage"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -25,7 +32,9 @@
   },
   "commands": {
     "_execute_action": {
-      "suggested_key": { "default": "Alt+Shift+S" },
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
       "description": "Capture the full page"
     }
   }

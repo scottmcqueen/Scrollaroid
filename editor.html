@@ -22,7 +22,11 @@
 
     <div class="group crop-actions" hidden>
       <button id="applyCrop" class="primary" title="Apply crop (Enter)">Apply crop</button>
-      <button id="cancelCrop" title="Clear selection (Esc)">Cancel</button>
+      <button id="cancelCrop" title="Clear selection (Esc)">Clear</button>
+    </div>
+
+    <div class="group box-actions" hidden>
+      <button id="deleteBox" title="Delete box (Delete)">Delete box</button>
     </div>
 
     <div class="group">
@@ -43,14 +47,17 @@
     <div class="spacer"></div>
 
     <div class="group">
+      <button id="discard" title="Discard this screenshot and close the tab">Cancel</button>
       <button id="copy" title="Copy image (Ctrl/⌘+C)">Copy</button>
       <button id="download" class="primary" title="Download PNG (Ctrl/⌘+S)">Download PNG</button>
+      <button id="package" class="primary" title="Original, redacted copy, raw frames, PDF report and checksums" hidden>Evidence package</button>
     </div>
   </header>
 
   <main id="stage">
     <div id="wrap" hidden>
-      <div id="sel" hidden>
+      <div id="rects"></div>
+      <div id="sel" class="box" hidden>
         <i data-h="nw"></i><i data-h="n"></i><i data-h="ne"></i><i data-h="e"></i>
         <i data-h="se"></i><i data-h="s"></i><i data-h="sw"></i><i data-h="w"></i>
         <b id="selSize"></b>
@@ -60,11 +67,38 @@
   </main>
 
   <footer class="status">
+    <span id="evidencePill" class="pill" title="Captured in evidence mode: nothing on the page was hidden and every screen was fingerprinted when captured" hidden>Evidence mode</span>
     <a id="source" target="_blank" rel="noopener"></a>
     <span id="dims"></span>
     <span id="note"></span>
     <span id="toast" role="status" aria-live="polite"></span>
   </footer>
+
+  <dialog id="confirmDiscard" aria-labelledby="discardTitle">
+    <form method="dialog">
+      <h2 id="discardTitle">Discard this screenshot?</h2>
+      <p>The capture and any crops or redactions will be deleted, and this tab will close. This can't be undone.</p>
+      <div class="dialog-actions">
+        <button value="keep" autofocus>Keep editing</button>
+        <button value="discard" class="danger">Discard</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="packageDialog" aria-labelledby="packageTitle">
+    <form method="dialog">
+      <h2 id="packageTitle">Create evidence package</h2>
+      <p>Optional details for the report. Your name and reference are remembered for next time.</p>
+      <label>Captured by<input id="examiner" autocomplete="name" maxlength="120"></label>
+      <label>Case or reference<input id="reference" maxlength="120"></label>
+      <label>Notes<textarea id="notes" rows="3" maxlength="2000"></textarea></label>
+      <p class="warn">The package includes the <strong>unredacted original</strong>. When sharing with others, send only <code>redacted.png</code> or <code>report.pdf</code> unless they should see everything.</p>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="create" class="primary">Create package</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="editor.js"></script>
 </body>
