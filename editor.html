@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scrollaroid</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="group tools" role="radiogroup" aria-label="Tool">
+      <button class="tool" data-tool="redact" title="Black box (B)" aria-pressed="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="6" width="14" height="8" rx="1"/></svg>
+        <span>Redact</span><kbd>B</kbd>
+      </button>
+      <button class="tool" data-tool="crop" title="Crop (C)" aria-pressed="false">
+        <svg viewBox="0 0 20 20" aria-hidden="true" class="stroke"><path d="M6 2v12h12M2 6h12v12"/></svg>
+        <span>Crop</span><kbd>C</kbd>
+      </button>
+    </div>
+
+    <div class="group crop-actions" hidden>
+      <button id="applyCrop" class="primary" title="Apply crop (Enter)">Apply crop</button>
+      <button id="cancelCrop" title="Clear selection (Esc)">Cancel</button>
+    </div>
+
+    <div class="group">
+      <button id="undo" class="icon" title="Undo (Ctrl/⌘+Z)" disabled>
+        <svg viewBox="0 0 20 20" class="stroke" aria-hidden="true"><path d="M7 5 3 9l4 4M3 9h9a5 5 0 0 1 0 10h-2"/></svg>
+      </button>
+      <button id="redo" class="icon" title="Redo (Ctrl/⌘+Shift+Z)" disabled>
+        <svg viewBox="0 0 20 20" class="stroke" aria-hidden="true"><path d="m13 5 4 4-4 4M17 9H8a5 5 0 0 0 0 10h2"/></svg>
+      </button>
+    </div>
+
+    <div class="group zoom">
+      <button id="zoomOut" class="icon" title="Zoom out (−)">−</button>
+      <button id="zoomLabel" class="zoom-label" title="Fit to width (0)">Fit</button>
+      <button id="zoomIn" class="icon" title="Zoom in (+)">+</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="group">
+      <button id="copy" title="Copy image (Ctrl/⌘+C)">Copy</button>
+      <button id="download" class="primary" title="Download PNG (Ctrl/⌘+S)">Download PNG</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <div id="wrap" hidden>
+      <div id="sel" hidden>
+        <i data-h="nw"></i><i data-h="n"></i><i data-h="ne"></i><i data-h="e"></i>
+        <i data-h="se"></i><i data-h="s"></i><i data-h="sw"></i><i data-h="w"></i>
+        <b id="selSize"></b>
+      </div>
+    </div>
+    <div id="message">Loading capture…</div>
+  </main>
+
+  <footer class="status">
+    <a id="source" target="_blank" rel="noopener"></a>
+    <span id="dims"></span>
+    <span id="note"></span>
+    <span id="toast" role="status" aria-live="polite"></span>
+  </footer>
+
+  <script type="module" src="editor.js"></script>
+</body>
+</html>
