@@ -11,29 +11,34 @@ A Chrome extension that captures an entire scrolling page as one image, then let
 
 ## Use
 
-- Click the toolbar button, or press **Alt+Shift+S** (change it at `chrome://extensions/shortcuts`).
-- The page scrolls itself while the badge shows progress; keep the tab in front until it finishes.
-- An editor tab opens with the stitched image.
+| To | Do |
+| --- | --- |
+| Capture the full page | Click the toolbar button, or press **Alt+Shift+S** |
+| Capture a selected area | Press **Alt+Shift+A** (or right-click the icon), then drag a box; drag past the edge to keep scrolling |
+| Capture as evidence | Press **Alt+Shift+E** (or right-click the icon) |
+| Stop a long capture | Press **Esc** or click the icon again; you keep everything captured so far |
+
+Change the shortcuts at `chrome://extensions/shortcuts`. A welcome page opens on install; it's also under **Help and shortcuts** when you right-click the icon.
 
 ### Editor
 
 | Action | How |
 | --- | --- |
 | Black box | **Redact** tool (B), drag over anything to hide |
+| Find and redact | **Find & redact** (F) finds email addresses, phone numbers, card numbers, usernames or any text you type, and covers the ones you pick |
 | Adjust a box | Click it to select, drag to move, drag a handle to resize, arrow keys to nudge, Delete to remove |
 | Crop | **Crop** tool (C), drag a box, adjust with the handles, then **Apply crop** or Enter |
 | Undo / redo | Ctrl/⌘+Z, Ctrl/⌘+Shift+Z |
 | Zoom | − / + buttons, Ctrl/⌘+scroll, 0 to fit |
 | Save | **Download PNG** (Ctrl/⌘+S) or **Copy** (Ctrl/⌘+C) |
 | Discard | **Cancel**, then confirm, deletes the capture and closes the tab |
+| Help | **?** lists every shortcut |
 
-Dragging near the edge of the window scrolls automatically, so a crop or redaction can span a long page.
+Redaction boxes stay movable while you edit and are painted into the pixels when you download or copy, so nothing underneath is recoverable from the saved image. Find and redact only searches the page's text, not text inside images.
 
-Redaction boxes stay movable while you edit and are painted into the pixels when you download or copy, so nothing underneath is recoverable from the saved image.
+## Evidence captures
 
-## Evidence mode
-
-For screenshots that may be used as evidence, right-click the toolbar icon and tick **Evidence mode**. The icon shows an orange **EV** badge while it's on. Captures taken in evidence mode:
+For screenshots that may be used as evidence, press **Alt+Shift+E**, or right-click the icon and choose **Capture full page as evidence** or **Capture selected area as evidence**. Evidence captures:
 
 - Hide nothing on the page, so the image matches exactly what was on screen (fixed headers may repeat).
 - Fingerprint every raw screen image with SHA-256 the moment it's captured.
@@ -53,11 +58,11 @@ In the editor, **Evidence package** downloads a zip containing:
 
 The package includes the unredacted original. Share only `redacted.png` or `report.pdf` with anyone who shouldn't see everything.
 
-Evidence mode documents how a capture was made; it doesn't make a screenshot admissible on its own. Requirements vary by jurisdiction, so check with whoever is handling the matter.
+An evidence capture documents how a screenshot was made; it doesn't make a screenshot admissible on its own. Requirements vary by jurisdiction, so check with whoever is handling the matter.
 
 ## How it works
 
-- Fixed elements (headers, cookie bars, chat bubbles) appear once at the top instead of repeating in every frame; sticky headers are hidden only while stuck. Evidence mode turns this off.
+- Fixed elements (headers, cookie bars, chat bubbles) appear once at the top instead of repeating in every frame; sticky headers are hidden only while stuck. Evidence captures turn this off.
 - Web-app layouts where the window itself doesn't scroll (an inner feed or panel does) are detected, and that panel is scrolled and stitched instead.
 - Endless-scroll pages stop after 80 screens.
 - Very tall pages are scaled down to stay within Chrome's 32,000 px canvas limit; the editor notes when that happens.

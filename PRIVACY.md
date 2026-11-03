@@ -1,6 +1,6 @@
 # Scrollaroid Privacy Policy
 
-_Last updated: 3 November 2026 (version 1.2)_
+_Last updated: 3 November 2026 (version 1.3)_
 
 Scrollaroid is a Chrome extension that captures a full web page as an image and lets you crop and redact it. This policy explains what it does with your information. The short version: **nothing leaves your computer.**
 
@@ -13,7 +13,8 @@ Nothing. Scrollaroid has no servers, no accounts, no analytics and no advertisin
 - When you click the Scrollaroid button or press its shortcut, it captures the page in the current tab, and only that tab.
 - The captured images are stored temporarily in your browser's local storage on your own computer, so the editor can open them. They are deleted automatically after 24 hours.
 - Crops and redactions happen entirely in your browser. When you download or copy the result, it goes straight to your computer or clipboard.
-- In Evidence mode, the page address, title, capture time, browser version and window size are written into the image and into the evidence package. Evidence packages are built on your computer and saved to your Downloads; nothing is sent anywhere.
+- For evidence captures, the page address, title, capture time, browser version and window size are written into the image and into the evidence package. Evidence packages are built on your computer and saved to your Downloads; nothing is sent anywhere.
+- To make Find and redact work, Scrollaroid notes the words on the captured page and where they appear. This stays with the capture on your computer and is deleted with it.
 - If you type a name or case reference when creating an evidence package, Scrollaroid remembers it in your browser's local extension storage so it's filled in next time. It never leaves your computer, and removing the extension deletes it.
 - Scrollaroid never uploads screenshots anywhere.
 
@@ -22,11 +23,11 @@ Nothing. Scrollaroid has no servers, no accounts, no analytics and no advertisin
 | Permission | Why it's needed |
 | --- | --- |
 | `activeTab` | To capture the current tab, only after you click the button or press the shortcut. |
-| `scripting` | To scroll the page during capture and temporarily hide repeating headers, then put the page back as it was. |
+| `scripting` | To scroll the page during capture, show a progress indicator, let you select an area, temporarily hide repeating headers, and note where text sits for Find and redact. The page is put back as it was afterwards. |
 | `unlimitedStorage` | To hold large captures locally while the editor opens. |
 | `clipboardWrite` | For the "Copy" button in the editor. |
-| `contextMenus` | Adds the "Evidence mode" switch to the toolbar icon's right-click menu. |
-| `storage` | Remembers whether Evidence mode is on, and the name and case reference you last entered. |
+| `contextMenus` | Adds area, evidence and help options to the toolbar icon's right-click menu. |
+| `storage` | Remembers the name and case reference you last entered for an evidence package. |
 
 Scrollaroid cannot see or read any page until you activate it on that page.
 

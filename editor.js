@@ -26,6 +26,7 @@ let frames = [];
 let stitchInfo = null; // {scale, joins}
 let editLog = []; // evidence mode: timestamped list of edits
 let originalCache = null; // evidence mode: promise of {bytes, sha256}
+let textIndex = null; // words on the page and where they are, for Find and redact
 let base = null;
 let view = null; // canvas on screen: `base` itself, or a cropped copy of it
 let crop = null; // {x, y, w, h} in base px
@@ -66,14 +67,28 @@ async function init() {
   source.href = meta.url;
   source.title = meta.url;
 
-  const { canvas, scale, joins } = await stitch(data);
+  const { canvas, scale, joins, px } = await stitch(data);
   base = canvas;
   frames = data.frames;
-  stitchInfo = { scale, joins };
+  stitchInfo = { scale, joins, px };
   crop = { x: 0, y: 0, w: base.width, h: base.height };
+  if (data.text?.nodes?.length) textIndex = buildTextIndex(data.text, px);
+
+  // Area captures open already cropped to the selection; undo shows the whole strip.
+  if (meta.initialCrop) {
+    const c = meta.initialCrop;
+    const x = clamp(Math.round(c.x * px), 0, base.width - 1);
+    const y = clamp(Math.round(c.y * px), 0, base.height - 1);
+    const full = snapshot();
+    crop = { x, y, w: clamp(Math.round(c.w * px), 1, base.width - x), h: clamp(Math.round(c.h * px), 1, base.height - y) };
+    history.push(full);
+    logEdit('Cropped to the selected area');
+  }
+
   const notes = [];
   if (scale < 0.999) notes.push(`Very tall page — scaled to ${Math.round(scale * 100)}% to fit Chrome's image size limit`);
   if (meta.truncated) notes.push(`Stopped after ${data.frames.length} screens (endless-scroll page?)`);
+  if (meta.stoppedEarly) notes.push(`Stopped early after ${data.frames.length} screen${data.frames.length === 1 ? '' : 's'}`);
   $('#note').textContent = notes.join(' · ');
 
   if (meta.evidence) {
@@ -93,7 +108,8 @@ async function stitch({ meta, frames }) {
   const first = await createImageBitmap(frames[0].blob);
   const sy = first.height / meta.vh; // device pixels per CSS px on the captured page
   const W = first.width;
-  const lastY = frames[frames.length - 1].y;
+  const y0 = frames[0].y; // area captures start part-way down the page
+  const lastY = frames[frames.length - 1].y - y0;
   const H = Math.round(lastY * sy) + first.height;
   const k = Math.min(1, MAX_SIDE / H, MAX_SIDE / W, Math.sqrt(MAX_AREA / (W * H)));
 
@@ -115,14 +131,14 @@ async function stitch({ meta, frames }) {
   for (let i = 0; i < frames.length; i++) {
     showMessage(`Stitching ${i + 1} of ${frames.length}…`);
     const bmp = i === 0 ? first : await createImageBitmap(frames[i].blob);
-    const destY = bandTop + Math.round(frames[i].y * sy);
+    const destY = bandTop + Math.round((frames[i].y - y0) * sy);
     if (i > 0) joins.push(Math.round(destY * k));
     if (i === 0) put(bmp, 0, bandTop, 0); // anything above a scrolling panel
     put(bmp, bandTop, bandH, destY);
     if (i === frames.length - 1) put(bmp, bandTop + bandH, bottomH, destY + bandH); // anything below it
     bmp.close();
   }
-  return { canvas, scale: k, joins };
+  return { canvas, scale: k, joins, px: sy * k };
 }
 
 /* --------------------------- state & undo -------------------------- */
@@ -481,11 +497,194 @@ function cancelCrop() {
   refreshUi();
 }
 
+/* -------------------------- find and redact ------------------------ */
+
+function buildTextIndex(raw, f) {
+  let text = '';
+  const words = [];
+  for (const node of raw.nodes) {
+    const start = text.length;
+    text += `${node.t}\n`;
+    for (const [s, e, x, y, w, h] of node.w) words.push({ s: start + s, e: start + e, x: x * f, y: y * f, w: w * f, h: h * f });
+  }
+  return { text, words, pad: 2 * f };
+}
+
+const luhn = (digits) => {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = +digits[digits.length - 1 - i];
+    if (i % 2) d = d * 2 > 9 ? d * 2 - 9 : d * 2;
+    sum += d;
+  }
+  return sum % 10 === 0;
+};
+
+const PATTERNS = [
+  { id: 'email', label: 'Email addresses', re: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g },
+  {
+    id: 'card',
+    label: 'Card numbers',
+    re: /(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g,
+    keep: (t) => {
+      const d = t.replace(/\D/g, '');
+      return d.length >= 13 && d.length <= 19 && luhn(d);
+    },
+  },
+  {
+    id: 'phone',
+    label: 'Phone numbers',
+    // International (+...), US style (555) 123-4567 / 555-123-4567, or local numbers starting with 0.
+    // Not preceded by a letter-and-digit code, so tracking and order numbers aren't caught.
+    re: /(?<![\w+])(?<!\d[A-Za-z]?\s)(?:\+\d{1,3}[\s.-]?(?:\(\d{1,4}\)[\s.-]?)?\d(?:[\s.-]?\d){6,12}|\(\d{3}\)\s?\d{3}[-.\s]\d{4}|\d{3}[-.\s]\d{3}[-.\s]\d{4}|0\d{1,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4})(?!\d)/g,
+    keep: (t) => {
+      const d = t.replace(/\D/g, '');
+      if (d.length < 8 || d.length > 15) return false;
+      if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(t) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(t)) return false; // dates
+      return true;
+    },
+  },
+  { id: 'handle', label: 'Usernames (@name, u/name)', re: /(?<![\w@/])(?:@[A-Za-z0-9_.]{2,30}|u\/[A-Za-z0-9_-]{3,20})/g },
+];
+
+// Boxes (base px) covering the words of text[ms, me), one box per line.
+function boxesFor(ms, me) {
+  const words = textIndex.words;
+  let lo = 0, hi = words.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (words[mid].e <= ms) lo = mid + 1;
+    else hi = mid;
+  }
+  const lines = [];
+  for (let i = lo; i < words.length && words[i].s < me; i++) {
+    const w = words[i];
+    const line = lines.find((l) => Math.abs(l.cy - (w.y + w.h / 2)) < w.h / 2);
+    if (line) {
+      line.x1 = Math.min(line.x1, w.x);
+      line.y1 = Math.min(line.y1, w.y);
+      line.x2 = Math.max(line.x2, w.x + w.w);
+      line.y2 = Math.max(line.y2, w.y + w.h);
+    } else {
+      lines.push({ cy: w.y + w.h / 2, x1: w.x, y1: w.y, x2: w.x + w.w, y2: w.y + w.h });
+    }
+  }
+  const p = textIndex.pad;
+  return lines.map((l) => {
+    const x = clamp(Math.floor(l.x1 - p), 0, base.width);
+    const y = clamp(Math.floor(l.y1 - p), 0, base.height);
+    return { x, y, w: clamp(Math.ceil(l.x2 + p), 0, base.width) - x, h: clamp(Math.ceil(l.y2 + p), 0, base.height) - y };
+  });
+}
+
+const inCrop = (b) => b.w > 0 && b.h > 0 && b.x < crop.x + crop.w && b.x + b.w > crop.x && b.y < crop.y + crop.h && b.y + b.h > crop.y;
+
+function findMatches(re, keep, taken = []) {
+  const out = [];
+  for (const m of textIndex.text.matchAll(re)) {
+    const t = m[0].trim();
+    if (!t || (keep && !keep(t))) continue;
+    const ms = m.index, me = m.index + m[0].length;
+    if (taken.some(([a, b]) => ms < b && me > a)) continue;
+    const boxes = boxesFor(ms, me).filter(inCrop);
+    if (!boxes.length) continue;
+    out.push({ text: t, boxes, range: [ms, me] });
+  }
+  return out;
+}
+
+let findGroups = [];
+
+function runFind() {
+  const groups = [];
+  const taken = [];
+  for (const p of PATTERNS) {
+    const matches = findMatches(p.re, p.keep, taken);
+    matches.forEach((m) => taken.push(m.range));
+    groups.push({ ...p, matches });
+  }
+  const q = $('#findText').value.trim();
+  if (q.length >= 2) {
+    const re = new RegExp(q.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'gi');
+    groups.unshift({ id: 'custom', label: `"${q}"`, matches: findMatches(re) });
+  }
+  findGroups = groups;
+  renderFind();
+}
+
+function renderFind() {
+  const list = $('#findResults');
+  list.innerHTML = '';
+  const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  findGroups.forEach((g, gi) => {
+    const section = document.createElement('section');
+    const n = g.matches.length;
+    section.innerHTML = `<label class="group-head"><input type="checkbox" data-g="${gi}" ${n ? 'checked' : 'disabled'}> ${esc(g.label)} <span>${n}</span></label>`;
+    if (n) {
+      const ul = document.createElement('ul');
+      ul.innerHTML = g.matches
+        .slice(0, 300)
+        .map((m, mi) => `<li><label><input type="checkbox" data-g="${gi}" data-m="${mi}" checked> <span>${esc(m.text)}</span></label></li>`)
+        .join('');
+      section.appendChild(ul);
+    }
+    list.appendChild(section);
+  });
+  updateFindCount();
+}
+
+function selectedMatches() {
+  const out = [];
+  for (const cb of $('#findResults').querySelectorAll('input[data-m]:checked')) out.push(findGroups[+cb.dataset.g].matches[+cb.dataset.m]);
+  return out;
+}
+
+function updateFindCount() {
+  const n = selectedMatches().length;
+  $('#findApply').textContent = n ? `Redact ${n} match${n === 1 ? '' : 'es'}` : 'Redact matches';
+  $('#findApply').disabled = !n;
+}
+
+function openFind() {
+  if (!textIndex) {
+    toast('No page text was recorded for this capture');
+    return;
+  }
+  setTool('redact');
+  runFind();
+  $('#findDialog').returnValue = '';
+  $('#findDialog').showModal();
+  $('#findText').focus();
+}
+
+function applyFind() {
+  const before = snapshot();
+  const key = (b) => `${b.x},${b.y},${b.w},${b.h}`;
+  const existing = new Set(rects.map(key));
+  let added = 0;
+  for (const m of selectedMatches()) {
+    for (const b of m.boxes) {
+      if (existing.has(key(b))) continue;
+      existing.add(key(b));
+      rects.push({ id: nextId++, ...b });
+      added++;
+    }
+  }
+  selectedId = null;
+  commit(before, `Added ${added} redaction box${added === 1 ? '' : 'es'} with Find and redact`);
+  renderRects();
+  refreshUi();
+  toast(added ? `Added ${added} box${added === 1 ? '' : 'es'}. Check them before saving` : 'Those matches are already covered', 4000);
+}
+
 function refreshUi() {
   $('#undo').disabled = !history.length;
   $('#redo').disabled = !future.length;
   $('.crop-actions').hidden = tool !== 'crop';
   $('.box-actions').hidden = tool !== 'redact' || selectedId == null;
+  $('#find').hidden = tool !== 'redact';
+  $('#find').disabled = !textIndex;
+  $('#find').title = textIndex ? 'Find emails, phone numbers, names and more, and black them out (F)' : 'No page text was recorded for this capture';
   $('#applyCrop').disabled = !(cropSel && cropSel.w >= MIN_RECT && cropSel.h >= MIN_RECT);
   $('#cancelCrop').disabled = !cropSel;
   if (view) $('#dims').textContent = `${view.width.toLocaleString()} × ${view.height.toLocaleString()} px`;
@@ -540,6 +739,33 @@ function bindUi() {
   $('#download').addEventListener('click', download);
   $('#copy').addEventListener('click', copy);
   $('#discard').addEventListener('click', () => $('#confirmDiscard').showModal());
+  $('#help').addEventListener('click', () => $('#helpDialog').showModal());
+  $('#find').addEventListener('click', openFind);
+  let findTimer = 0;
+  $('#findText').addEventListener('input', () => {
+    clearTimeout(findTimer);
+    findTimer = setTimeout(runFind, 200);
+  });
+  $('#findText').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') e.preventDefault();
+  });
+  $('#findResults').addEventListener('change', (e) => {
+    const cb = e.target;
+    if (cb.dataset.g != null && cb.dataset.m == null) {
+      cb.closest('section').querySelectorAll('input[data-m]').forEach((x) => (x.checked = cb.checked));
+    } else if (cb.dataset.m != null) {
+      const section = cb.closest('section');
+      const all = section.querySelectorAll('input[data-m]');
+      const on = section.querySelectorAll('input[data-m]:checked').length;
+      const head = section.querySelector('input:not([data-m])');
+      head.checked = on > 0;
+      head.indeterminate = on > 0 && on < all.length;
+    }
+    updateFindCount();
+  });
+  $('#findDialog').addEventListener('close', () => {
+    if ($('#findDialog').returnValue === 'apply') applyFind();
+  });
   $('#package').addEventListener('click', async () => {
     const saved = await chrome.storage.local.get(['examiner', 'reference']).catch(() => ({}));
     $('#examiner').value = saved.examiner || '';
@@ -648,6 +874,11 @@ function bindUi() {
       e.preventDefault();
       const step = e.shiftKey ? 10 : 1;
       nudgeSelected(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0);
+    } else if (k === 'f') {
+      e.preventDefault();
+      openFind();
+    } else if (k === '?' || (k === '/' && e.shiftKey)) {
+      $('#helpDialog').showModal();
     } else if (k === 'b' || k === 'r') {
       setTool('redact');
     } else if (k === 'c') {
@@ -738,7 +969,7 @@ function pngMeta(kind, originalSha) {
     Title: meta.title,
     Source: meta.pageUrl || meta.url,
     'Creation Time': meta.startedAt,
-    Software: `Scrollaroid ${meta.toolVersion} (evidence mode)`,
+    Software: `Scrollaroid ${meta.toolVersion} (evidence capture)`,
     Description: kind,
     'Original SHA-256': originalSha,
   };
@@ -766,7 +997,7 @@ function editsSummary() {
 
 function footerLines(originalSha) {
   return [
-    `Captured with Scrollaroid ${meta.toolVersion} in evidence mode`,
+    `Captured with Scrollaroid ${meta.toolVersion} as an evidence capture`,
     `URL: ${meta.pageUrl || meta.url}`,
     `Captured: ${fmtUtc(meta.startedAt)}  |  ${fmtLocal(meta.startedAt)}`,
     `Original image SHA-256: ${originalSha}`,
@@ -880,7 +1111,7 @@ async function buildReport({ caseInfo, exportedAt, files, frameFiles, redactedIm
   pdf.field('Browser', meta.browser);
   pdf.field('Window size', `${meta.vw} x ${meta.vh} CSS px at ${meta.dpr}x pixel density`);
   pdf.field('Screens captured', `${frames.length}${meta.truncated ? ' (stopped at the frame limit; the page may continue)' : ''}`);
-  pdf.field('Tool', `Scrollaroid ${meta.toolVersion}, evidence mode`);
+  pdf.field('Tool', `Scrollaroid ${meta.toolVersion}, evidence capture`);
   pdf.space(6);
 
   if (caseInfo.examiner || caseInfo.reference || caseInfo.notes) {

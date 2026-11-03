@@ -20,6 +20,13 @@
       </button>
     </div>
 
+    <div class="group">
+      <button id="find" title="Find emails, phone numbers, names and more, and black them out (F)">
+        <svg viewBox="0 0 20 20" class="stroke" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4.5 4.5"/></svg>
+        <span>Find &amp; redact</span><kbd>F</kbd>
+      </button>
+    </div>
+
     <div class="group crop-actions" hidden>
       <button id="applyCrop" class="primary" title="Apply crop (Enter)">Apply crop</button>
       <button id="cancelCrop" title="Clear selection (Esc)">Clear</button>
@@ -47,6 +54,7 @@
     <div class="spacer"></div>
 
     <div class="group">
+      <button id="help" class="icon" title="Help and shortcuts (?)" aria-label="Help and shortcuts">?</button>
       <button id="discard" title="Discard this screenshot and close the tab">Cancel</button>
       <button id="copy" title="Copy image (Ctrl/⌘+C)">Copy</button>
       <button id="download" class="primary" title="Download PNG (Ctrl/⌘+S)">Download PNG</button>
@@ -67,7 +75,7 @@
   </main>
 
   <footer class="status">
-    <span id="evidencePill" class="pill" title="Captured in evidence mode: nothing on the page was hidden and every screen was fingerprinted when captured" hidden>Evidence mode</span>
+    <span id="evidencePill" class="pill" title="Evidence capture: nothing on the page was hidden and every screen was fingerprinted when captured" hidden>Evidence capture</span>
     <a id="source" target="_blank" rel="noopener"></a>
     <span id="dims"></span>
     <span id="note"></span>
@@ -97,6 +105,46 @@
         <button value="cancel" formnovalidate>Cancel</button>
         <button value="create" class="primary">Create package</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="findDialog" aria-labelledby="findTitle">
+    <form method="dialog">
+      <h2 id="findTitle">Find and redact</h2>
+      <p>Matches found in the page's text. Untick anything you want to keep, then add the boxes. You can still move or delete each box afterwards.</p>
+      <label>Find specific text (a name, address, anything)<input id="findText" placeholder="e.g. Jordan Avery" autocomplete="off"></label>
+      <div id="findResults"></div>
+      <p class="hint">Only text on the page is searched, not text inside pictures or videos. Always check the result before saving.</p>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button id="findApply" value="apply" class="primary">Redact matches</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="helpDialog" aria-labelledby="helpTitle">
+    <form method="dialog">
+      <h2 id="helpTitle">Shortcuts</h2>
+      <table class="keys">
+        <tr><th colspan="2">Capturing (on any page)</th></tr>
+        <tr><td><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></td><td>Capture the full page</td></tr>
+        <tr><td><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></td><td>Capture a selected area</td></tr>
+        <tr><td><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></td><td>Capture the full page as evidence</td></tr>
+        <tr><td><kbd>Esc</kbd> or click the icon</td><td>Stop a capture early</td></tr>
+        <tr><td>Right-click the icon</td><td>Area and evidence captures</td></tr>
+        <tr><th colspan="2">Editing</th></tr>
+        <tr><td><kbd>B</kbd></td><td>Redact: drag to draw a black box</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Find and redact text</td></tr>
+        <tr><td>Click a box</td><td>Select it; drag to move, handles to resize</td></tr>
+        <tr><td><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></td><td>Nudge the selected box (hold Shift for 10px)</td></tr>
+        <tr><td><kbd>Delete</kbd></td><td>Remove the selected box</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Crop: drag, adjust, then <kbd>Enter</kbd></td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd><kbd>Z</kbd></td><td>Undo (add Shift to redo)</td></tr>
+        <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Zoom in, out, fit (or ⌘/Ctrl + scroll)</td></tr>
+        <tr><td><kbd>⌘/Ctrl</kbd><kbd>S</kbd> / <kbd>C</kbd></td><td>Download PNG / copy image</td></tr>
+      </table>
+      <p class="hint">Change the capture shortcuts at chrome://extensions/shortcuts.</p>
+      <div class="dialog-actions"><button value="close" class="primary" autofocus>Done</button></div>
     </form>
   </dialog>
 
