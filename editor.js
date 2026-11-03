@@ -1,5 +1,4 @@
 import { loadCapture, deleteCapture } from './db.js';
-import { sha256Hex, addPngText, withFooter, makeZip, PdfReport } from './evidence.js';
 
 // Chrome's canvas limits: 32,767 px per side and ~268 M pixels. Stay well inside both.
 const MAX_SIDE = 32000;
@@ -22,10 +21,6 @@ const selSize = $('#selSize');
 // just these two small pieces of state.
 let captureId = null;
 let meta = null;
-let frames = [];
-let stitchInfo = null; // {scale, joins}
-let editLog = []; // evidence mode: timestamped list of edits
-let originalCache = null; // evidence mode: promise of {bytes, sha256}
 let textIndex = null; // words on the page and where they are, for Find and redact
 let base = null;
 let view = null; // canvas on screen: `base` itself, or a cropped copy of it
@@ -67,10 +62,8 @@ async function init() {
   source.href = meta.url;
   source.title = meta.url;
 
-  const { canvas, scale, joins, px } = await stitch(data);
+  const { canvas, scale, px } = await stitch(data);
   base = canvas;
-  frames = data.frames;
-  stitchInfo = { scale, joins, px };
   crop = { x: 0, y: 0, w: base.width, h: base.height };
   if (data.text?.nodes?.length) textIndex = buildTextIndex(data.text, px);
 
@@ -82,7 +75,6 @@ async function init() {
     const full = snapshot();
     crop = { x, y, w: clamp(Math.round(c.w * px), 1, base.width - x), h: clamp(Math.round(c.h * px), 1, base.height - y) };
     history.push(full);
-    logEdit('Cropped to the selected area');
   }
 
   const notes = [];
@@ -90,12 +82,6 @@ async function init() {
   if (meta.truncated) notes.push(`Stopped after ${data.frames.length} screens (endless-scroll page?)`);
   if (meta.stoppedEarly) notes.push(`Stopped early after ${data.frames.length} screen${data.frames.length === 1 ? '' : 's'}`);
   $('#note').textContent = notes.join(' · ');
-
-  if (meta.evidence) {
-    $('#evidencePill').hidden = false;
-    $('#package').hidden = false;
-    $('#download').classList.remove('primary');
-  }
 
   rebuildView();
   $('#message').hidden = true;
@@ -149,9 +135,8 @@ const sameState = (a, b) =>
   sameRect(a.crop, b.crop) && a.rects.length === b.rects.length && a.rects.every((r, i) => r.id === b.rects[i].id && sameRect(r, b.rects[i]));
 
 // Record `before` as an undo step if the state has changed since then.
-function commit(before, action) {
+function commit(before) {
   if (sameState(before, snapshot())) return;
-  logEdit(action);
   history.push(before);
   future = [];
   refreshUi();
@@ -171,20 +156,14 @@ function restore(s) {
   refreshUi();
 }
 
-function logEdit(action) {
-  if (meta?.evidence && action) editLog.push({ at: new Date().toISOString(), action });
-}
-
 function undo() {
   if (!history.length || drag) return;
-  logEdit('Undo');
   future.push(snapshot());
   restore(history.pop());
 }
 
 function redo() {
   if (!future.length || drag) return;
-  logEdit('Redo');
   history.push(snapshot());
   restore(future.pop());
 }
@@ -766,34 +745,6 @@ function bindUi() {
   $('#findDialog').addEventListener('close', () => {
     if ($('#findDialog').returnValue === 'apply') applyFind();
   });
-  $('#package').addEventListener('click', async () => {
-    const saved = await chrome.storage.local.get(['examiner', 'reference']).catch(() => ({}));
-    $('#examiner').value = saved.examiner || '';
-    $('#reference').value = saved.reference || '';
-    $('#notes').value = '';
-    $('#packageDialog').returnValue = '';
-    $('#packageDialog').showModal();
-  });
-  $('#packageDialog').addEventListener('close', () => {
-    if ($('#packageDialog').returnValue !== 'create') return;
-    const caseInfo = {
-      examiner: $('#examiner').value.trim(),
-      reference: $('#reference').value.trim(),
-      notes: $('#notes').value.trim(),
-    };
-    chrome.storage.local.set({ examiner: caseInfo.examiner, reference: caseInfo.reference }).catch(() => {});
-    $('#package').disabled = true;
-    exportPackage(caseInfo)
-      .catch((err) => {
-        console.error(err);
-        toast(`Package failed: ${err.message}`);
-      })
-      .finally(() => ($('#package').disabled = false));
-  });
-  $('#confirmDiscard').addEventListener('close', () => {
-    if ($('#confirmDiscard').returnValue === 'discard') discard();
-  });
-
   wrap.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || !view || drag) return;
     e.preventDefault();
@@ -918,277 +869,15 @@ async function discard() {
 /* ------------------------------ export ----------------------------- */
 
 const canvasBlob = (c, type = 'image/png', q) => new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image'))), type, q));
-const blobBytes = async (b) => new Uint8Array(await b.arrayBuffer());
 
-// The image as shared: cropped, redactions burned in, and in evidence mode a provenance footer.
+// The image as shared: cropped, with redactions burned into the pixels.
 async function exportBlob() {
   const flat = flatten();
-  if (!meta.evidence) {
-    try {
-      return await canvasBlob(flat);
-    } finally {
-      flat.width = flat.height = 0;
-    }
-  }
-  const original = await getOriginal();
-  const stamped = withFooter(flat, footerLines(original.sha256));
-  flat.width = flat.height = 0;
   try {
-    const bytes = addPngText(await blobBytes(await canvasBlob(stamped)), pngMeta('Redacted copy', original.sha256));
-    return new Blob([bytes], { type: 'image/png' });
+    return await canvasBlob(flat);
   } finally {
-    stamped.width = stamped.height = 0;
+    flat.width = flat.height = 0;
   }
-}
-
-/* -------------------------- evidence export ------------------------ */
-
-const fmtUtc = (iso) => iso && iso.replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
-function fmtLocal(iso) {
-  if (!iso) return '';
-  const tz = meta.timeZone;
-  try {
-    return `${new Date(iso).toLocaleString('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'long' })} (${tz})`;
-  } catch {
-    return new Date(iso).toString();
-  }
-}
-
-// The stitched, unedited image. Encoded once so its hash stays stable for the session.
-function getOriginal() {
-  originalCache ??= (async () => {
-    const png = await blobBytes(await canvasBlob(base));
-    const bytes = addPngText(png, pngMeta('Original (unedited) full-page capture'));
-    return { bytes, sha256: await sha256Hex(bytes) };
-  })();
-  return originalCache;
-}
-
-function pngMeta(kind, originalSha) {
-  return {
-    Title: meta.title,
-    Source: meta.pageUrl || meta.url,
-    'Creation Time': meta.startedAt,
-    Software: `Scrollaroid ${meta.toolVersion} (evidence capture)`,
-    Description: kind,
-    'Original SHA-256': originalSha,
-  };
-}
-
-function cropInBase() {
-  return crop.x || crop.y || crop.w !== base.width || crop.h !== base.height ? { ...crop } : null;
-}
-
-// Redaction boxes that are at least partly inside the final crop, in original-image pixels.
-function visibleRedactions() {
-  return rects
-    .filter((r) => r.x < crop.x + crop.w && r.x + r.w > crop.x && r.y < crop.y + crop.h && r.y + r.h > crop.y)
-    .map(({ x, y, w, h }) => ({ x, y, w, h }));
-}
-
-function editsSummary() {
-  const c = cropInBase();
-  const n = visibleRedactions().length;
-  const parts = [];
-  if (c) parts.push(`cropped to ${c.w}x${c.h} at (${c.x}, ${c.y})`);
-  if (n) parts.push(`${n} area${n === 1 ? '' : 's'} redacted`);
-  return parts.length ? parts.join('; ') : 'none';
-}
-
-function footerLines(originalSha) {
-  return [
-    `Captured with Scrollaroid ${meta.toolVersion} as an evidence capture`,
-    `URL: ${meta.pageUrl || meta.url}`,
-    `Captured: ${fmtUtc(meta.startedAt)}  |  ${fmtLocal(meta.startedAt)}`,
-    `Original image SHA-256: ${originalSha}`,
-    `Edits to this copy: ${editsSummary()}`,
-  ];
-}
-
-async function exportPackage(caseInfo) {
-  const stamp = fileStamp();
-  const folder = `Scrollaroid evidence ${stamp}`;
-  const exportedAt = new Date().toISOString();
-  const files = []; // {name, data, sha256}
-  const addFile = async (name, data) => {
-    const f = { name, data, sha256: await sha256Hex(data) };
-    files.push(f);
-    return f;
-  };
-
-  toast('Packaging: original image…', 0);
-  const original = await getOriginal();
-  await addFile('original.png', original.bytes);
-
-  toast('Packaging: redacted copy…', 0);
-  const redacted = await addFile('redacted.png', await blobBytes(await exportBlob()));
-
-  toast('Packaging: raw frames…', 0);
-  const frameFiles = [];
-  for (let i = 0; i < frames.length; i++) {
-    const name = `frames/frame-${String(i + 1).padStart(3, '0')}.png`;
-    const bytes = await blobBytes(frames[i].blob);
-    const f = await addFile(name, bytes);
-    frameFiles.push({
-      file: name,
-      scrollY: frames[i].y,
-      capturedAt: frames[i].capturedAt,
-      sha256AtCapture: frames[i].sha256,
-      sha256: f.sha256,
-      matchesCaptureHash: frames[i].sha256 === f.sha256,
-    });
-  }
-
-  toast('Packaging: report…', 0);
-  const redactedImg = await createImageBitmap(new Blob([redacted.data], { type: 'image/png' }));
-  const report = await buildReport({ caseInfo, exportedAt, files, frameFiles, redactedImg });
-  redactedImg.close();
-  const reportFile = await addFile('report.pdf', report);
-
-  const manifest = {
-    format: 'scrollaroid-evidence/1',
-    tool: { name: 'Scrollaroid', version: meta.toolVersion, exportedWith: chrome.runtime.getManifest().version },
-    case: caseInfo,
-    capture: {
-      url: meta.pageUrl || meta.url,
-      tabUrl: meta.url,
-      title: meta.title,
-      startedAt: meta.startedAt,
-      completedAt: meta.completedAt,
-      timeZone: meta.timeZone,
-      browser: meta.browser,
-      userAgent: meta.userAgent,
-      viewport: { width: meta.vw, height: meta.vh, devicePixelRatio: meta.dpr },
-      scrollMode: meta.mode === 'element' ? 'inner scrolling panel' : 'window',
-      repeatingElementsHidden: false,
-      truncatedAtFrameLimit: !!meta.truncated,
-      frames: frameFiles,
-    },
-    original: {
-      file: 'original.png',
-      sha256: original.sha256,
-      width: base.width,
-      height: base.height,
-      scaledToFitCanvasLimit: stitchInfo.scale < 0.999 ? stitchInfo.scale : 1,
-      frameJoinsAtY: stitchInfo.joins,
-    },
-    redacted: {
-      file: 'redacted.png',
-      sha256: redacted.sha256,
-      derivedFrom: 'original.png',
-      crop: cropInBase(),
-      redactions: visibleRedactions(),
-      footerAdded: true,
-    },
-    report: { file: 'report.pdf', sha256: reportFile.sha256 },
-    editLog,
-    exportedAt,
-    note: 'Coordinates are in original.png pixels. Every file is listed in SHA256SUMS.txt.',
-  };
-  await addFile('manifest.json', new TextEncoder().encode(JSON.stringify(manifest, null, 2)));
-
-  const sums = files.map((f) => `${f.sha256}  ${f.name}`).join('\n') + '\n';
-  files.push({ name: 'SHA256SUMS.txt', data: new TextEncoder().encode(sums) });
-
-  const zip = makeZip(files.map((f) => ({ name: `${folder}/${f.name}`, data: f.data })));
-  saveBlob(zip, `${folder}.zip`);
-  toast('Evidence package downloaded');
-}
-
-async function buildReport({ caseInfo, exportedAt, files, frameFiles, redactedImg }) {
-  const pdf = new PdfReport();
-  const sha = (name) => files.find((f) => f.name === name)?.sha256 || '';
-
-  pdf.text('Web capture record', { font: 'bold', size: 18, gap: 6 });
-  pdf.text(meta.title || meta.url, { size: 11, color: 0.3, gap: 10 });
-  pdf.rule();
-
-  pdf.text('Capture', { font: 'bold', size: 11, gap: 6 });
-  pdf.field('URL', meta.pageUrl || meta.url);
-  pdf.field('Page title', meta.title);
-  pdf.field('Capture started', `${fmtUtc(meta.startedAt)}  (${fmtLocal(meta.startedAt)})`);
-  pdf.field('Capture finished', fmtUtc(meta.completedAt));
-  pdf.field('Browser', meta.browser);
-  pdf.field('Window size', `${meta.vw} x ${meta.vh} CSS px at ${meta.dpr}x pixel density`);
-  pdf.field('Screens captured', `${frames.length}${meta.truncated ? ' (stopped at the frame limit; the page may continue)' : ''}`);
-  pdf.field('Tool', `Scrollaroid ${meta.toolVersion}, evidence capture`);
-  pdf.space(6);
-
-  if (caseInfo.examiner || caseInfo.reference || caseInfo.notes) {
-    pdf.text('Case', { font: 'bold', size: 11, gap: 6 });
-    if (caseInfo.examiner) pdf.field('Captured by', caseInfo.examiner);
-    if (caseInfo.reference) pdf.field('Reference', caseInfo.reference);
-    if (caseInfo.notes) pdf.field('Notes', caseInfo.notes);
-    pdf.space(6);
-  }
-
-  pdf.text('Method', { font: 'bold', size: 11, gap: 6 });
-  pdf.text(
-    `The page was scrolled automatically from top to bottom and captured as ${frames.length} screen image${frames.length === 1 ? '' : 's'} using Chrome's built-in tab capture. ` +
-      'Nothing on the page was hidden or altered, so headers or other elements fixed to the screen can appear more than once. ' +
-      'Each screen image was fingerprinted with SHA-256 at the moment it was captured, before any processing. ' +
-      'The screen images were then joined vertically to form original.png. ' +
-      'redacted.png is a separate copy made from original.png; the crop and the opaque black redaction areas listed below were applied to that copy only. ' +
-      'original.png and the raw screen images are included unaltered.',
-    { size: 9.5, gap: 3.5 },
-  );
-  if (stitchInfo.scale < 0.999) {
-    pdf.text(`Because the page was very tall, original.png was scaled to ${Math.round(stitchInfo.scale * 100)}% of full resolution to fit Chrome's image size limit. The raw screen images are full resolution.`, { size: 9.5, gap: 3.5 });
-  }
-  pdf.space(6);
-
-  pdf.text('Edits in redacted.png', { font: 'bold', size: 11, gap: 6 });
-  const c = cropInBase();
-  pdf.field('Crop', c ? `x ${c.x}, y ${c.y}, width ${c.w}, height ${c.h} (pixels of original.png)` : 'None');
-  const reds = visibleRedactions();
-  pdf.field('Redacted areas', reds.length ? reds.map((r, i) => `${i + 1}. x ${r.x}, y ${r.y}, ${r.w} x ${r.h}`).join('\n') : 'None');
-  pdf.field('Footer', 'A provenance band (URL, capture time, original hash, edit summary) was added below the image.');
-  pdf.space(6);
-
-  pdf.text('File fingerprints (SHA-256)', { font: 'bold', size: 11, gap: 6 });
-  for (const name of ['original.png', 'redacted.png']) {
-    pdf.text(name, { font: 'bold', size: 9, gap: 2 });
-    pdf.text(sha(name), { font: 'mono', size: 8.5, gap: 5 });
-  }
-  pdf.text('Raw screen images are listed at the end of this report. All files, including this report, are listed in SHA256SUMS.txt.', { size: 9, gap: 4, color: 0.3 });
-  pdf.space(6);
-
-  pdf.text('How to verify', { font: 'bold', size: 11, gap: 6 });
-  pdf.text('Open a terminal in the package folder and run one of:', { size: 9.5, gap: 3 });
-  pdf.text('macOS / Linux:  shasum -a 256 -c SHA256SUMS.txt', { font: 'mono', size: 8.5, gap: 3, indent: 10 });
-  pdf.text('Windows:  Get-FileHash -Algorithm SHA256 <file>', { font: 'mono', size: 8.5, gap: 5, indent: 10 });
-  pdf.text('Every file should report OK, or its hash should match the value listed. Any change to a file, even one pixel, produces a different fingerprint.', { size: 9.5, gap: 3.5 });
-  pdf.space(6);
-  pdf.text(`Report generated ${fmtUtc(exportedAt)}. This report records how the capture was made; it is not a legal opinion.`, { size: 8.5, color: 0.4 });
-
-  // The redacted image, sliced into page-sized JPEGs.
-  const area = PdfReport.imageArea();
-  const sliceH = Math.max(1, Math.floor((redactedImg.width * area.h) / area.w));
-  const slices = Math.ceil(redactedImg.height / sliceH);
-  const tmp = document.createElement('canvas');
-  for (let i = 0; i < slices; i++) {
-    const y = i * sliceH;
-    const h = Math.min(sliceH, redactedImg.height - y);
-    tmp.width = redactedImg.width;
-    tmp.height = h;
-    const ctx = tmp.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, tmp.width, h);
-    ctx.drawImage(redactedImg, 0, y, redactedImg.width, h, 0, 0, tmp.width, h);
-    const jpg = await blobBytes(await canvasBlob(tmp, 'image/jpeg', 0.9));
-    pdf.imagePage(jpg, tmp.width, h, `redacted.png, part ${i + 1} of ${slices} (pixels ${y}-${y + h} of ${redactedImg.height}). JPEG preview; the PNG in this package is the reference copy.`);
-  }
-  tmp.width = tmp.height = 0;
-
-  pdf.newPage();
-  pdf.text('Raw screen images', { font: 'bold', size: 11, gap: 6 });
-  pdf.text('Fingerprinted when captured. "Match" confirms the file in this package is identical to what was captured.', { size: 9, gap: 6, color: 0.3 });
-  for (const f of frameFiles) {
-    pdf.text(`${f.file}   scroll ${f.scrollY}px   ${fmtUtc(f.capturedAt)}   ${f.matchesCaptureHash ? 'Match' : 'MISMATCH'}`, { size: 8.5, gap: 2 });
-    pdf.text(f.sha256, { font: 'mono', size: 8, gap: 5, indent: 10 });
-  }
-
-  return pdf.build(`Scrollaroid evidence record  |  ${meta.pageUrl || meta.url}`);
 }
 
 function saveBlob(blob, name) {

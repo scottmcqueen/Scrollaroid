@@ -58,7 +58,6 @@
       <button id="discard" title="Discard this screenshot and close the tab">Cancel</button>
       <button id="copy" title="Copy image (Ctrl/⌘+C)">Copy</button>
       <button id="download" class="primary" title="Download PNG (Ctrl/⌘+S)">Download PNG</button>
-      <button id="package" class="primary" title="Original, redacted copy, raw frames, PDF report and checksums" hidden>Evidence package</button>
     </div>
   </header>
 
@@ -75,7 +74,6 @@
   </main>
 
   <footer class="status">
-    <span id="evidencePill" class="pill" title="Evidence capture: nothing on the page was hidden and every screen was fingerprinted when captured" hidden>Evidence capture</span>
     <a id="source" target="_blank" rel="noopener"></a>
     <span id="dims"></span>
     <span id="note"></span>
@@ -89,21 +87,6 @@
       <div class="dialog-actions">
         <button value="keep" autofocus>Keep editing</button>
         <button value="discard" class="danger">Discard</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="packageDialog" aria-labelledby="packageTitle">
-    <form method="dialog">
-      <h2 id="packageTitle">Create evidence package</h2>
-      <p>Optional details for the report. Your name and reference are remembered for next time.</p>
-      <label>Captured by<input id="examiner" autocomplete="name" maxlength="120"></label>
-      <label>Case or reference<input id="reference" maxlength="120"></label>
-      <label>Notes<textarea id="notes" rows="3" maxlength="2000"></textarea></label>
-      <p class="warn">The package includes the <strong>unredacted original</strong>. When sharing with others, send only <code>redacted.png</code> or <code>report.pdf</code> unless they should see everything.</p>
-      <div class="dialog-actions">
-        <button value="cancel" formnovalidate>Cancel</button>
-        <button value="create" class="primary">Create package</button>
       </div>
     </form>
   </dialog>
@@ -129,9 +112,8 @@
         <tr><th colspan="2">Capturing (on any page)</th></tr>
         <tr><td><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></td><td>Capture the full page</td></tr>
         <tr><td><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></td><td>Capture a selected area</td></tr>
-        <tr><td><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></td><td>Capture the full page as evidence</td></tr>
         <tr><td><kbd>Esc</kbd> or click the icon</td><td>Stop a capture early</td></tr>
-        <tr><td>Right-click the icon</td><td>Area and evidence captures</td></tr>
+        <tr><td>Right-click the icon</td><td>More capture options</td></tr>
         <tr><th colspan="2">Editing</th></tr>
         <tr><td><kbd>B</kbd></td><td>Redact: drag to draw a black box</td></tr>
         <tr><td><kbd>F</kbd></td><td>Find and redact text</td></tr>

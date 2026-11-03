@@ -1,6 +1,6 @@
 # Scrollaroid
 
-A Chrome extension that captures an entire scrolling page as one image, then lets you crop it and black out anything private before saving.
+A free, open-source Chrome extension that captures an entire scrolling page (or any part of it) as one image, then lets you crop it and black out anything private before saving.
 
 ## Install
 
@@ -15,7 +15,6 @@ A Chrome extension that captures an entire scrolling page as one image, then let
 | --- | --- |
 | Capture the full page | Click the toolbar button, or press **Alt+Shift+S** |
 | Capture a selected area | Press **Alt+Shift+A** (or right-click the icon), then drag a box; drag past the edge to keep scrolling |
-| Capture as evidence | Press **Alt+Shift+E** (or right-click the icon) |
 | Stop a long capture | Press **Esc** or click the icon again; you keep everything captured so far |
 
 Change the shortcuts at `chrome://extensions/shortcuts`. A welcome page opens on install; it's also under **Help and shortcuts** when you right-click the icon.
@@ -36,33 +35,9 @@ Change the shortcuts at `chrome://extensions/shortcuts`. A welcome page opens on
 
 Redaction boxes stay movable while you edit and are painted into the pixels when you download or copy, so nothing underneath is recoverable from the saved image. Find and redact only searches the page's text, not text inside images.
 
-## Evidence captures
-
-For screenshots that may be used as evidence, press **Alt+Shift+E**, or right-click the icon and choose **Capture full page as evidence** or **Capture selected area as evidence**. Evidence captures:
-
-- Hide nothing on the page, so the image matches exactly what was on screen (fixed headers may repeat).
-- Fingerprint every raw screen image with SHA-256 the moment it's captured.
-- Record the URL, page title, capture start and end times (UTC and local), browser version and window size.
-- Stamp downloads and copies with a footer showing the URL, capture time, the original image's SHA-256 and a summary of edits, and embed the same details in the PNG metadata.
-
-In the editor, **Evidence package** downloads a zip containing:
-
-| File | What it is |
-| --- | --- |
-| `original.png` | The full stitched capture, unedited |
-| `redacted.png` | The cropped and redacted copy, with the provenance footer |
-| `frames/` | Every raw screen image exactly as captured |
-| `report.pdf` | Capture details, method, edits, fingerprints and how to verify, followed by the redacted image |
-| `manifest.json` | All of the above in machine-readable form, including crop and redaction coordinates and a timestamped edit log |
-| `SHA256SUMS.txt` | Fingerprints of every file; check with `shasum -a 256 -c SHA256SUMS.txt` |
-
-The package includes the unredacted original. Share only `redacted.png` or `report.pdf` with anyone who shouldn't see everything.
-
-An evidence capture documents how a screenshot was made; it doesn't make a screenshot admissible on its own. Requirements vary by jurisdiction, so check with whoever is handling the matter.
-
 ## How it works
 
-- Fixed elements (headers, cookie bars, chat bubbles) appear once at the top instead of repeating in every frame; sticky headers are hidden only while stuck. Evidence captures turn this off.
+- Fixed elements (headers, cookie bars, chat bubbles) appear once at the top instead of repeating in every frame; sticky headers are hidden only while stuck.
 - Web-app layouts where the window itself doesn't scroll (an inner feed or panel does) are detected, and that panel is scrolled and stitched instead.
 - Endless-scroll pages stop after 80 screens.
 - Very tall pages are scaled down to stay within Chrome's 32,000 px canvas limit; the editor notes when that happens.
@@ -77,5 +52,13 @@ Chrome doesn't allow extensions to capture `chrome://` pages, the Chrome Web Sto
 The `store/` folder holds the listing images and isn't part of the extension. To build the upload zip:
 
 ```sh
-zip -r scrollaroid.zip . -x 'store/*' 'README.md' '.git*' '*.zip'
+zip -r scrollaroid.zip . -x 'store/*' 'README.md' 'PRIVACY.md' 'LICENSE' '.git*' '*.zip'
 ```
+
+## Licence
+
+Copyright © 2026 Scott McQueen.
+
+Scrollaroid is free software: you can redistribute it and/or modify it under the terms of the **GNU Affero General Public License, version 3** (see [`LICENSE`](LICENSE)). If you distribute a modified version, you must make its source available under the same licence.
+
+Commercial rights are reserved by the author. Veriframe, the professional evidence-capture extension, is a separate product and is not covered by this licence. For other commercial licensing, contact the author.

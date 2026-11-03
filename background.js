@@ -17,15 +17,12 @@ let stopRequested = false;
 chrome.action.onClicked.addListener((tab) => trigger(tab, {}));
 
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command === 'capture-evidence') trigger(tab, { evidence: true });
-  else if (command === 'capture-area') trigger(tab, { area: true });
+  if (command === 'capture-area') trigger(tab, { area: true });
 });
 
 const MENU = {
   'capture-page': {},
   'capture-area': { area: true },
-  'capture-page-evidence': { evidence: true },
-  'capture-area-evidence': { evidence: true, area: true },
 };
 
 async function setupMenu() {
@@ -33,15 +30,13 @@ async function setupMenu() {
   const add = (id, title) => chrome.contextMenus.create({ id, title, contexts: ['action'] });
   add('capture-page', 'Capture full page');
   add('capture-area', 'Capture selected area');
-  add('capture-page-evidence', 'Capture full page as evidence');
-  add('capture-area-evidence', 'Capture selected area as evidence');
   add('help', 'Help and shortcuts');
 }
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await setupMenu();
-  // Clear the old Evidence mode switch from 1.2.
-  chrome.storage.local.remove('evidenceMode').catch(() => {});
+  // Tidy up settings left by earlier versions.
+  chrome.storage?.local.clear().catch(() => {});
   chrome.action.setBadgeText({ text: '' });
   if (reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
 });
@@ -67,7 +62,7 @@ function trigger(tab, opts) {
 
 /* ------------------------------- capture ------------------------------- */
 
-async function captureTab(tab, { evidence = false, area = false } = {}) {
+async function captureTab(tab, { area = false } = {}) {
   if (!tab?.id) return;
   busy = true;
   stopRequested = false;
@@ -84,8 +79,7 @@ async function captureTab(tab, { evidence = false, area = false } = {}) {
     }
 
     await setBadge(tabId, '…', '#4b5563');
-    const startedAt = new Date().toISOString();
-    const info = await run(tabId, preparePage, [evidence]);
+    const info = await run(tabId, preparePage);
     prepared = true;
 
     // Which part of the page to capture, in scroll positions.
@@ -114,8 +108,7 @@ async function captureTab(tab, { evidence = false, area = false } = {}) {
         break;
       }
       const pct = frames.length ? progress(frames, info, endY) : 0;
-      // In evidence mode nothing on the page is hidden, so the image shows exactly what was on screen.
-      const step = await run(tabId, scrollStep, [target, !evidence && frames.length > 0, `Capturing… ${pct}%`]);
+      const step = await run(tabId, scrollStep, [target, frames.length > 0, `Capturing… ${pct}%`]);
       if (frames.length && step.y <= frames[frames.length - 1].y + 0.5) break; // reached the bottom
       if (!frames.length) await run(tabId, collectText, [1, step.y]);
 
@@ -125,14 +118,7 @@ async function captureTab(tab, { evidence = false, area = false } = {}) {
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
       lastCapture = Date.now();
 
-      const blob = await (await fetch(dataUrl)).blob();
-      const frame = { y: step.y, blob };
-      if (evidence) {
-        // Fingerprint each raw screen image the moment it's captured, before any processing.
-        frame.capturedAt = new Date(lastCapture).toISOString();
-        frame.sha256 = await sha256Hex(await blob.arrayBuffer());
-      }
-      frames.push(frame);
+      frames.push({ y: step.y, blob: await (await fetch(dataUrl)).blob() });
       info.contentH = step.contentH;
       setBadge(tabId, `${progress(frames, info, endY)}%`, '#2563eb');
 
@@ -170,17 +156,6 @@ async function captureTab(tab, { evidence = false, area = false } = {}) {
         area: !!selection,
         initialCrop,
         createdAt: Date.now(),
-        evidence,
-        ...(evidence && {
-          startedAt,
-          completedAt: new Date().toISOString(),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          pageUrl: info.url,
-          dpr: info.dpr,
-          userAgent: navigator.userAgent,
-          browser: await browserVersion(),
-          toolVersion: chrome.runtime.getManifest().version,
-        }),
       },
       frames,
       text,
@@ -229,21 +204,6 @@ function setBadge(tabId, text, color) {
 
 async function clearBadge(tabId) {
   await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
-}
-
-async function sha256Hex(buf) {
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function browserVersion() {
-  try {
-    const ua = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'platformVersion']);
-    const chrome = ua.fullVersionList.find((b) => /Chrome|Chromium/.test(b.brand));
-    return `${chrome ? `${chrome.brand} ${chrome.version}` : 'Chromium'} on ${ua.platform} ${ua.platformVersion || ''}`.trim();
-  } catch {
-    return navigator.userAgent;
-  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -357,7 +317,7 @@ function selectArea() {
   });
 }
 
-function preparePage(evidence) {
+function preparePage() {
   const de = document.documentElement;
   const st = (window.__fpsState = { candidates: [] });
 
@@ -408,7 +368,7 @@ function preparePage(evidence) {
   // Fixed and sticky elements would repeat in every frame; remember them so they
   // can be hidden after the first one.
   const scope = container || document.body;
-  if (scope && !evidence) {
+  if (scope) {
     for (const el of scope.querySelectorAll('*')) {
       const p = getComputedStyle(el).position;
       if (p === 'fixed' || p === 'sticky') st.candidates.push({ el, p });
