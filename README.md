@@ -20,14 +20,16 @@ A Chrome extension that captures an entire scrolling page as one image, then let
 | Action | How |
 | --- | --- |
 | Black box | **Redact** tool (B), drag over anything to hide |
+| Adjust a box | Click it to select, drag to move, drag a handle to resize, arrow keys to nudge, Delete to remove |
 | Crop | **Crop** tool (C), drag a box, adjust with the handles, then **Apply crop** or Enter |
 | Undo / redo | Ctrl/⌘+Z, Ctrl/⌘+Shift+Z |
 | Zoom | − / + buttons, Ctrl/⌘+scroll, 0 to fit |
 | Save | **Download PNG** (Ctrl/⌘+S) or **Copy** (Ctrl/⌘+C) |
+| Discard | **Cancel**, then confirm, deletes the capture and closes the tab |
 
 Dragging near the edge of the window scrolls automatically, so a crop or redaction can span a long page.
 
-Redactions are painted into the pixels of the exported PNG; nothing underneath is recoverable.
+Redaction boxes stay movable while you edit and are painted into the pixels when you download or copy, so nothing underneath is recoverable from the saved image.
 
 ## How it works
 
