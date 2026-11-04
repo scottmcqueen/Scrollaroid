@@ -4,6 +4,10 @@ A free, open-source Chrome extension that captures an entire scrolling page (or 
 
 ## Install
 
+**From the Chrome Web Store (recommended):** [Add Scrollaroid to Chrome](https://chromewebstore.google.com/detail/scrollaroid/eihjhcelalipjndbgndiajaokccecbok)
+
+**From source:**
+
 1. Download or clone this repository somewhere permanent (Chrome loads it from that location).
 2. Open `chrome://extensions` and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the repository folder.
